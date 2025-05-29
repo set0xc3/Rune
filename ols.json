@@ -8,6 +8,10 @@
     {
       "name": "saura",
       "path": "src"
+    },
+    {
+      "name": "saura-vendor",
+      "path": "vendor"
     }
   ]
 }

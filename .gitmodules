@@ -1,0 +1,6 @@
+[submodule "vendor/microui-odin"]
+	path = vendor/microui-odin
+	url = https://github.com/set0xc3/microui-odin.git
+[submodule "vendor/microui"]
+	path = vendor/microui
+	url = https://github.com/set0xc3/microui-odin.git
