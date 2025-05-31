@@ -11,146 +11,51 @@ import rl "vendor:raylib"
 import mu "saura-vendor:microui"
 import "saura:ui"
 
-Direction :: enum {
-	Left,
-	Right,
-	Up,
-	Down,
-}
+WINDOW_WIDTH := 1280
+WINDOW_HEIGHT := 720
 
-DockPanel :: struct {
-	using node: list.Node,
-	title:      string,
-	rect:       mu.Rect,
-}
-
-DockLayout :: struct {
-	panels:      list.List,
-	panel_count: int,
-	root_panel:  ^DockPanel,
-	hot_panel:   ^DockPanel,
-}
-
-rlmui_ctx: ^mu.Context
-dock_layout_ctx: DockLayout
-
-dock_layout_add_root_panel :: proc() {
-	using dock_layout_ctx
-
-	length := fmt.fprintf(1, "%d", panel_count)
-	buf: [dynamic]byte
-	buf = make([dynamic]byte, length);defer delete(buf)
-	title := strconv.itoa(buf[:], panel_count)
-
-	panel := new(DockPanel)
-	panel.title = strings.clone(title)
-	panel.rect = {0, 0, rl.GetScreenWidth(), rl.GetScreenHeight()}
-
-	root_panel = panel
-
-	list.push_back(&panels, &panel.node)
-	panel_count += 1
-}
-
-dock_layout_add_panel :: proc(dir: Direction) {
-	using dock_layout_ctx
-
-	length := fmt.fprintf(1, "%d", panel_count)
-	buf: [dynamic]byte
-	buf = make([dynamic]byte, length);defer delete(buf)
-	title := strconv.itoa(buf[:], panel_count)
-
-	panel := new(DockPanel)
-	panel.title = strings.clone(title)
-
-	if dir == .Left {
-		panel.rect = {root_panel.rect.x, root_panel.rect.y, 200, rl.GetScreenHeight()}
-		root_panel.rect.x += 200
-		root_panel.rect.w -= 200
-	} else if dir == .Right {
-		root_panel.rect.w -= 200
-		panel.rect = {
-			root_panel.rect.x + root_panel.rect.w,
-			root_panel.rect.h,
-			200,
-			rl.GetScreenHeight(),
-		}
-		panel.rect.y -= root_panel.rect.h
-	} else if dir == .Up {
-		panel.rect = {root_panel.rect.x, root_panel.rect.y, root_panel.rect.w, 200}
-		root_panel.rect.y += 200
-		root_panel.rect.h -= 200
-	} else if dir == .Down {
-		root_panel.rect.h -= 200
-		panel.rect = {
-			root_panel.rect.x,
-			root_panel.rect.y + root_panel.rect.h,
-			root_panel.rect.w,
-			200,
-		}
-	}
-
-	list.push_back(&panels, &panel.node)
-	panel_count += 1
-}
-
-dock_layout_init :: proc() {
-	using dock_layout_ctx
-
-	//dock_layout_ctx.panel_left.rect = {0, 0, 200, 720}
-	//
-	//dock_layout_ctx.panel_center.rect = {dock_layout_ctx.panel_left.rect.w, 0, 1280, 720}
-	//dock_layout_ctx.panel_center.rect.w -= dock_layout_ctx.panel_left.rect.w
-	//
-	//dock_layout_ctx.panel_right.rect = {1280 - 200, 0, 200, 720}
-	//dock_layout_ctx.panel_center.rect.w -= dock_layout_ctx.panel_right.rect.w
-	//
-	//dock_layout_ctx.panel_down.rect = {0, 720 - 200, 1280, 200}
-	//dock_layout_ctx.panel_left.rect.h -= dock_layout_ctx.panel_down.rect.h
-	//dock_layout_ctx.panel_center.rect.h -= dock_layout_ctx.panel_down.rect.h
-	//dock_layout_ctx.panel_right.rect.h -= dock_layout_ctx.panel_down.rect.h
-
-	dock_layout_add_root_panel()
-	dock_layout_add_panel(.Left)
-	dock_layout_add_panel(.Left)
-	dock_layout_add_panel(.Left)
-	dock_layout_add_panel(.Left)
-	dock_layout_add_panel(.Down)
-	dock_layout_add_panel(.Down)
-}
-
-dock_layout_update :: proc() {
-	using dock_layout_ctx
-
-	//mu.window(rlmui_ctx, "#window:left", dock_layout_ctx.panel_left.rect)
-	//mu.window(rlmui_ctx, "#window:center", dock_layout_ctx.panel_center.rect)
-	//mu.window(rlmui_ctx, "#window:right", dock_layout_ctx.panel_right.rect)
-	//mu.window(rlmui_ctx, "#window:down", dock_layout_ctx.panel_down.rect)
-
-	iterator_head := list.iterator_head(panels, DockPanel, "node")
-	for _panel in list.iterate_next(&iterator_head) {
-		panel: ^DockPanel = _panel
-		mu.window(rlmui_ctx, panel.title, panel.rect)
-		mu.get_container(rlmui_ctx, panel.title).rect = panel.rect
-	}
-}
+mu_ctx: ^mu.Context
 
 main :: proc() {
 	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
-	rl.InitWindow(1280, 720, "Example");defer rl.CloseWindow()
+	rl.InitWindow(auto_cast WINDOW_WIDTH, auto_cast WINDOW_HEIGHT, "Example");defer rl.CloseWindow()
 	rl.SetWindowMinSize(320, 240)
 
-	rlmui_ctx = ui.InitUIScope()
-	dock_layout_init()
+	mu_ctx = ui.InitUIScope()
 
 	for !rl.WindowShouldClose() {
+		free_all(context.temp_allocator)
+
+		if (rl.IsWindowResized() && !rl.IsWindowFullscreen())
+        {
+            WINDOW_WIDTH = auto_cast rl.GetScreenWidth();
+            WINDOW_HEIGHT = auto_cast rl.GetScreenHeight();
+        }
+
+		fmt.println(WINDOW_WIDTH, WINDOW_HEIGHT)
+
 		rl.BeginDrawing();defer rl.EndDrawing()
 
 		rl.ClearBackground(rl.WHITE)
 
 		ui.BeginUIScope()
 
-		dock_layout_update()
+		@(static) opts := mu.Options{}
+
+		mu.set_next_item_size(mu_ctx, {auto_cast WINDOW_WIDTH, auto_cast WINDOW_HEIGHT})
+		mu.window(mu_ctx, "Main", {0, 0, auto_cast WINDOW_WIDTH, auto_cast WINDOW_HEIGHT}, opts)
+
+		mu.set_next_item_pos(mu_ctx, {100, 100})
+		mu.window(mu_ctx, "Test", {0, 0, 100, 100}, opts)
+
+		mu.layout_row(mu_ctx, {-1, -1})
+		mu.layout_begin_column(mu_ctx)
+		if .ACTIVE in mu.treenode(mu_ctx, "Test 1") {
+			if .SUBMIT in mu.button(mu_ctx, "Base Note Template", .NONE, {}) {
+				fmt.println("Click")
+			}
+		}
+		mu.layout_end_column(mu_ctx)
 
 		// Add left
 		if rl.IsKeyReleased(.F1) {
@@ -158,7 +63,5 @@ main :: proc() {
 		// Add Right
 		if rl.IsKeyReleased(.F2) {
 		}
-
-		free_all(context.temp_allocator)
 	}
 }
