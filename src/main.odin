@@ -2,10 +2,7 @@ package main
 
 import "core:container/queue"
 import "core:fmt"
-import "core:io"
 import "core:os"
-import "core:strconv"
-import "core:strings"
 
 import rl "vendor:raylib"
 
@@ -36,7 +33,8 @@ Folder :: struct {
 
 Context :: struct {
 	entities: queue.Queue(Entity),
-	viewport: string,
+	viewport: [dynamic]byte,
+	is_popup_item_context: bool,
 }
 ctx: Context
 
@@ -48,6 +46,11 @@ new_entity :: proc($T: typeid) -> ^T {
 
 folder_next_childs :: proc(childs: ^queue.Queue(Entity)) {
 	for child in childs.data {
+		if mu_ctx.hover_id == mu.get_id(mu_ctx, child.name) {
+			if rl.IsMouseButtonReleased(.RIGHT) {
+				ctx.is_popup_item_context = true
+			}
+		}
 		switch e in child.variant {
 		case ^Folder:
 			if .ACTIVE in mu.treenode(mu_ctx, e.name) {
@@ -55,23 +58,34 @@ folder_next_childs :: proc(childs: ^queue.Queue(Entity)) {
 			}
 		case ^File:
 			if .SUBMIT in mu.button(mu_ctx, e.name, .NONE, {}) {
-				handle, _ := os.open(e.name);defer os.close(handle)
-				data: [4096]byte
-				total_read, err := os.read(handle, data[:])
-				ctx.viewport = string(data[:total_read])
+				update_viewport(e.name)
 			}
 		}
 	}
 }
 
+// TODO: Use ArenaTemp
+update_viewport :: proc(file_path: string) {
+	if len(ctx.viewport) != 0 {
+		clear(&ctx.viewport)
+	}
+
+	handle, _ := os.open(file_path);defer os.close(handle)
+	len, _ := os.file_size(handle)
+	buffer := make([]byte, len);defer delete(buffer)
+	total_read, err := os.read(handle, buffer[:len])
+
+	append(&ctx.viewport, ..buffer[:len])
+}
+
 main :: proc() {
 	{
 		folder1 := new_entity(Folder)
-		folder1.name = "Hentai"
+		folder1.name = "Folder1"
 		queue.push_back(&ctx.entities, folder1)
 		{
 			folder2 := new_entity(Folder)
-			folder2.name = "Furry"
+			folder2.name = "Folder2"
 			queue.push_back(&folder1.childs, folder2)
 			{
 				file := new_entity(File)
@@ -116,10 +130,27 @@ main :: proc() {
 		// Left Panel
 		mu.set_next_item_size(mu_ctx, {200, auto_cast WINDOW_HEIGHT})
 		mu.window(mu_ctx, "Vault", {0, 0, 200, auto_cast WINDOW_HEIGHT}, opts)
+
+		if (mu.begin_popup(mu_ctx, "[popup:item:context]")) {
+			mu.button(mu_ctx, "File")
+			mu.button(mu_ctx, "Folder")
+			mu.end_popup(mu_ctx)
+		}
+
+		if ctx.is_popup_item_context {
+			mu.open_popup(mu_ctx, "[popup:item:context]")
+			ctx.is_popup_item_context = false
+		}
+
 		mu.layout_row(mu_ctx, {-1, -1})
 		mu.layout_begin_column(mu_ctx)
 
 		for entity in ctx.entities.data {
+			if mu_ctx.hover_id == mu.get_id(mu_ctx, entity.name) {
+				if rl.IsMouseButtonReleased(.RIGHT) {
+					ctx.is_popup_item_context = true
+				}
+			}
 			switch e in entity.variant {
 			case ^Folder:
 				if .ACTIVE in mu.treenode(mu_ctx, e.name) {
@@ -127,10 +158,7 @@ main :: proc() {
 				}
 			case ^File:
 				if .SUBMIT in mu.button(mu_ctx, e.name, .NONE, {}) {
-					handle, _ := os.open(e.name);defer os.close(handle)
-					data: [4096]byte
-					total_read, err := os.read(handle, data[:])
-					ctx.viewport = string(data[:total_read])
+					update_viewport(e.name)
 				}
 			}
 		}
@@ -160,7 +188,7 @@ main :: proc() {
 			{201, 0, auto_cast WINDOW_WIDTH - 200, auto_cast WINDOW_HEIGHT},
 			opts,
 		)
-		mu.text(mu_ctx, ctx.viewport)
+		mu.text(mu_ctx, string(ctx.viewport[:]))
 		// handle, _ := os.open("vendor/microui/README.md")
 		// data: [4096]byte
 		// total_read, err := os.read(handle, data[:])
