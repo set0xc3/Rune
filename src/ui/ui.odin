@@ -8,16 +8,16 @@ import rl "vendor:raylib"
 @(private)
 Color32 :: [4]u8
 
-State :: struct {
+Context :: struct {
 	pixels: []Color32,
 	image:  rl.Image,
 	atlas:  rl.Texture2D,
 	mu_ctx: mu.Context,
 }
 
-global_state: ^State = new(State)
+ctx: ^Context = new(Context)
 
-InitUI :: proc(using state: ^State = global_state) {
+init :: proc(using state: ^Context = ctx) {
 	// Allocate an array of 32 bit pixel colors for the atlas used by mui
 	// An atlas is a big image packed with multiple smaller images. Like a sprite sheet!
 	pixels = make([]Color32, mu.DEFAULT_ATLAS_WIDTH * mu.DEFAULT_ATLAS_HEIGHT)
@@ -50,13 +50,13 @@ InitUI :: proc(using state: ^State = global_state) {
 	// which mui uses to calculate the pixel width/height of a string when rendered with a certain font
 }
 
-DisposeUI :: proc(using state: ^State = global_state) {
+deinit :: proc(using state: ^Context = ctx) {
 	// Free the system/video pixel memory
 	delete(pixels)
 	rl.UnloadTexture(atlas)
 }
 
-BeginUI :: proc(using state: ^State = global_state) -> ^mu.Context {
+begin :: proc(using state: ^Context = ctx) -> ^mu.Context {
 	// Forward all input from raylib to mui
 	// We need to tell mui what keys are pressed, where the mouse is etc so the ui can react accordingly
 	forward_text_input_to_mui(state)
@@ -69,7 +69,7 @@ BeginUI :: proc(using state: ^State = global_state) -> ^mu.Context {
 	return &state.mu_ctx
 }
 
-EndUI :: proc(using state: ^State = global_state) {
+end :: proc(using state: ^Context = ctx) {
 	// Tell mui that we're done drawing ui
 	mu.end(&mu_ctx)
 
@@ -132,16 +132,20 @@ EndUI :: proc(using state: ^State = global_state) {
 	}
 }
 
-@(deferred_in = DisposeUI)
-InitUIScope :: proc(using state: ^State = global_state) -> ^mu.Context {InitUI(state)
-	return &state.mu_ctx}
-@(deferred_in = EndUI)
-BeginUIScope :: proc(using state: ^State = global_state) -> ^mu.Context {BeginUI(state)
-	return &state.mu_ctx}
+@(deferred_in = deinit)
+init_scope :: proc(using state: ^Context = ctx) -> ^mu.Context {
+	init(state)
+	return &state.mu_ctx
+}
+@(deferred_in = end)
+begin_scope :: proc(using state: ^Context = ctx) -> ^mu.Context {
+	begin(state)
+	return &state.mu_ctx
+}
 
 // Sends the current text (typing) input from raylib to mui
 @(private)
-forward_text_input_to_mui :: proc(using state: ^State) {
+forward_text_input_to_mui :: proc(using state: ^Context) {
 	// Create a buffer to hold UTF8 text input
 	// UTF8 is a "variable width encoding" so some characters may be 1 byte whereas other may be up to 4
 	text_input: [512]byte = ---
@@ -163,7 +167,7 @@ forward_text_input_to_mui :: proc(using state: ^State) {
 		// Encoding the rune into UTF8 always returns 4 bytes, but the count indicates how many runes the character actually is
 		bytes, count := utf8.encode_rune(pressed_rune)
 
-		// We'll copy from the start of the bytes array, up to the number of bytes used to represent the character, 
+		// We'll copy from the start of the bytes array, up to the number of bytes used to represent the character,
 		// into our text input buffer at the current text input offset
 		copy(text_input[text_input_offset:], bytes[:count])
 
@@ -178,7 +182,7 @@ forward_text_input_to_mui :: proc(using state: ^State) {
 
 // Sends the current mouse input from raylib to mui
 @(private)
-forward_mouse_input_to_mui :: proc(using state: ^State) {
+forward_mouse_input_to_mui :: proc(using state: ^Context) {
 	// Get the current mouse position/scroll from raylib
 	mouse_position := [2]i32{rl.GetMouseX(), rl.GetMouseY()}
 	mouse_scroll := rl.GetMouseWheelMove() * -30
@@ -215,7 +219,7 @@ forward_mouse_input_to_mui :: proc(using state: ^State) {
 // Not quite the same as forward_text_input_to_mui() which sends any pressed *characters*
 // whereas this sends specific "modifier" keys like Shift, Enter and Backspace
 @(private)
-forward_keyboard_input_to_mui :: proc(using state: ^State) {
+forward_keyboard_input_to_mui :: proc(using state: ^Context) {
 	// This struct stores a mapping from a raylib key enum to the equivalent mui enum
 	KeyMapping :: struct {
 		rl: rl.KeyboardKey,

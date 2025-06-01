@@ -1,7 +1,10 @@
 package main
 
 import "core:container/queue"
+import "core:crypto"
+import "core:encoding/uuid"
 import "core:fmt"
+import "core:math"
 import "core:os"
 
 import rl "vendor:raylib"
@@ -34,8 +37,8 @@ Folder :: struct {
 Context :: struct {
 	entities:              queue.Queue(Entity),
 	viewport:              [dynamic]byte,
-	is_popup_item_context: bool,
-	target_item: ^Entity,
+	is_showing_popup_item: bool,
+	target_item:           ^Entity,
 }
 ctx: Context
 
@@ -46,21 +49,21 @@ new_entity :: proc($T: typeid) -> ^T {
 }
 
 folder_next_childs :: proc(childs: ^queue.Queue(Entity)) {
-	for &child in childs.data {
-		switch e in child.variant {
+	for &ent in childs.data {
+		switch var in ent.variant {
 		case ^Folder:
-			if mu_ctx.hover_id == mu.get_id(mu_ctx, child.name) {
+			if mu_ctx.hover_id == mu.get_id(mu_ctx, ent.name) {
 				if rl.IsMouseButtonReleased(.RIGHT) {
-					ctx.target_item = &child
-					ctx.is_popup_item_context = true
+					ctx.target_item = &ent
+					ctx.is_showing_popup_item = true
 				}
 			}
-			if .ACTIVE in mu.treenode(mu_ctx, e.name) {
-				folder_next_childs(&e.childs)
+			if .ACTIVE in mu.treenode(mu_ctx, var.name) {
+				folder_next_childs(&var.childs)
 			}
 		case ^File:
-			if .SUBMIT in mu.button(mu_ctx, e.name, .NONE, {}) {
-				update_viewport(e.name)
+			if .SUBMIT in mu.button(mu_ctx, var.name, .NONE, {}) {
+				update_viewport(var.name)
 			}
 		}
 	}
@@ -81,13 +84,14 @@ update_viewport :: proc(file_path: string) {
 }
 
 main :: proc() {
+	context.random_generator = crypto.random_generator()
 	{
 		folder1 := new_entity(Folder)
-		folder1.name = "Folder1"
+		folder1.name = "Vaule"
 		queue.push_back(&ctx.entities, folder1)
 		{
 			folder2 := new_entity(Folder)
-			folder2.name = "Folder2"
+			folder2.name = "Child"
 			queue.push_back(&folder1.childs, folder2)
 			{
 				file := new_entity(File)
@@ -103,7 +107,7 @@ main :: proc() {
 	}
 
 
-	rl.SetConfigFlags({.VSYNC_HINT, .WINDOW_RESIZABLE})
+	rl.SetConfigFlags({.WINDOW_RESIZABLE, .VSYNC_HINT})
 	rl.InitWindow(
 		auto_cast WINDOW_WIDTH,
 		auto_cast WINDOW_HEIGHT,
@@ -111,7 +115,7 @@ main :: proc() {
 	);defer rl.CloseWindow()
 	rl.SetWindowMinSize(320, 240)
 
-	mu_ctx = ui.InitUIScope()
+	mu_ctx = ui.init_scope()
 
 	for !rl.WindowShouldClose() {
 		free_all(context.temp_allocator)
@@ -125,69 +129,65 @@ main :: proc() {
 
 		rl.ClearBackground(rl.WHITE)
 
-		ui.BeginUIScope()
+		ui.begin_scope()
 
-		@(static) opts := mu.Options{}
+		@(static) opts := mu.Option_Set{}
 
 		// Left Panel
-		mu.set_next_item_size(mu_ctx, {200, auto_cast WINDOW_HEIGHT})
-		mu.window(mu_ctx, "Vault", {0, 0, 200, auto_cast WINDOW_HEIGHT}, opts)
+		// mu.set_next_item_size(mu_ctx, {200, auto_cast WINDOW_HEIGHT})
 
-		// fmt.println("focus_id:, ", mu_ctx.focus_id)
-		// fmt.println("updated_focus: ", mu_ctx.updated_focus)
-		// fmt.println("hover_id: ", mu_ctx.hover_id)
-
-		if mu_ctx.hover_root != nil {
-			fmt.println("hover_root: ", mu_ctx.hover_root.rect)
-		}
-
-		if (mu.popup(mu_ctx, "[popup:item:context]")) {
-			if .SUBMIT in mu.button(mu_ctx, "File") {
-				if ctx.target_item != nil {
+		if mu.begin_window(mu_ctx, "Tree", {0, 0, 200, auto_cast WINDOW_HEIGHT}, opts) {
+			if mu.begin_popup(mu_ctx, "[popup:item:context]") {
+				if .SUBMIT in mu.button(mu_ctx, "File") {
 					file := new_entity(File)
-					file.name = "test.txt"
+					file.name = uuid.to_string(uuid.generate_v7())
+					// file.name = "qwertyuiop1234567890asdfghjksdfs123sedfsdf" // 27/28MAX
 					queue.push_back(&ctx.target_item.variant.(^Folder).childs, file)
 					ctx.target_item = nil
+
+					mu.end_popup(mu_ctx)
 					mu.close_popup(mu_ctx, "[popup:item:context]")
-				}
-			}
-			if .SUBMIT in mu.button(mu_ctx, "Folder") {
-				if ctx.target_item != nil {
+				} else if .SUBMIT in mu.button(mu_ctx, "Folder") {
 					folder := new_entity(Folder)
-					folder.name = "test"
+					folder.name = uuid.to_string(uuid.generate_v7())
 					queue.push_back(&ctx.target_item.variant.(^Folder).childs, folder)
 					ctx.target_item = nil
+
+					mu.end_popup(mu_ctx)
 					mu.close_popup(mu_ctx, "[popup:item:context]")
+				} else {
+					mu.end_popup(mu_ctx)
 				}
 			}
-		}
 
-		if ctx.is_popup_item_context {
-			mu.open_popup(mu_ctx, "[popup:item:context]")
-			ctx.is_popup_item_context = false
-		}
+			if ctx.is_showing_popup_item {
+				mu.open_popup(mu_ctx, "[popup:item:context]")
+				ctx.is_showing_popup_item = false
+			}
 
-		mu.layout_row(mu_ctx, {-1, -1})
-		mu.layout_begin_column(mu_ctx)
+			mu.layout_row(mu_ctx, {-1, -1})
+			mu.layout_begin_column(mu_ctx)
 
-		for &entity in ctx.entities.data {
-			switch e in entity.variant {
-			case ^Folder:
-				if mu_ctx.hover_id == mu.get_id(mu_ctx, entity.name) {
-					if rl.IsMouseButtonReleased(.RIGHT) {
-						ctx.target_item = &entity
-						ctx.is_popup_item_context = true
+			for &ent in ctx.entities.data {
+				switch var in ent.variant {
+				case ^Folder:
+					if mu_ctx.hover_id == mu.get_id(mu_ctx, ent.name) {
+						if rl.IsMouseButtonReleased(.RIGHT) {
+							ctx.target_item = &ent
+							ctx.is_showing_popup_item = true
+						}
+					}
+					if .ACTIVE in mu.treenode(mu_ctx, var.name) {
+						folder_next_childs(&var.childs)
+					}
+				case ^File:
+					if .SUBMIT in mu.button(mu_ctx, var.name, .NONE, {}) {
+						update_viewport(var.name)
 					}
 				}
-
-				if .ACTIVE in mu.treenode(mu_ctx, e.name) {
-					folder_next_childs(&e.childs)
-				}
-			case ^File:
-				if .SUBMIT in mu.button(mu_ctx, e.name, .NONE, {}) {
-					update_viewport(e.name)
-				}
 			}
+			mu.layout_end_column(mu_ctx)
+			mu.end_window(mu_ctx)
 		}
 
 
@@ -205,27 +205,27 @@ main :: proc() {
 		// 	}
 		// }
 
-		mu.layout_end_column(mu_ctx)
 
 		// Right Panel
-		mu.set_next_item_size(mu_ctx, {auto_cast WINDOW_WIDTH, auto_cast WINDOW_HEIGHT})
-		mu.window(
+		mu.set_next_item_size(mu_ctx, {auto_cast WINDOW_WIDTH - 200, auto_cast WINDOW_HEIGHT})
+		if mu.window(
 			mu_ctx,
 			"View",
 			{201, 0, auto_cast WINDOW_WIDTH - 200, auto_cast WINDOW_HEIGHT},
 			opts,
-		)
-		mu.text(mu_ctx, string(ctx.viewport[:]))
-		// handle, _ := os.open("vendor/microui/README.md")
-		// data: [4096]byte
-		// total_read, err := os.read(handle, data[:])
-		// mu.text(mu_ctx, string(data[:]))
+		) {
+			mu.text(mu_ctx, string(ctx.viewport[:]))
+			// handle, _ := os.open("vendor/microui/README.md")
+			// data: [4096]byte
+			// total_read, err := os.read(handle, data[:])
+			// mu.text(mu_ctx, string(data[:]))
 
-		// Add left
-		if rl.IsKeyReleased(.F1) {
-		}
-		// Add Right
-		if rl.IsKeyReleased(.F2) {
+			// Add left
+			if rl.IsKeyReleased(.F1) {
+			}
+			// Add Right
+			if rl.IsKeyReleased(.F2) {
+			}
 		}
 	}
 }
