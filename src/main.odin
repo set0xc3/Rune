@@ -32,9 +32,10 @@ Folder :: struct {
 }
 
 Context :: struct {
-	entities: queue.Queue(Entity),
-	viewport: [dynamic]byte,
+	entities:              queue.Queue(Entity),
+	viewport:              [dynamic]byte,
 	is_popup_item_context: bool,
+	target_item: ^Entity,
 }
 ctx: Context
 
@@ -45,14 +46,15 @@ new_entity :: proc($T: typeid) -> ^T {
 }
 
 folder_next_childs :: proc(childs: ^queue.Queue(Entity)) {
-	for child in childs.data {
-		if mu_ctx.hover_id == mu.get_id(mu_ctx, child.name) {
-			if rl.IsMouseButtonReleased(.RIGHT) {
-				ctx.is_popup_item_context = true
-			}
-		}
+	for &child in childs.data {
 		switch e in child.variant {
 		case ^Folder:
+			if mu_ctx.hover_id == mu.get_id(mu_ctx, child.name) {
+				if rl.IsMouseButtonReleased(.RIGHT) {
+					ctx.target_item = &child
+					ctx.is_popup_item_context = true
+				}
+			}
 			if .ACTIVE in mu.treenode(mu_ctx, e.name) {
 				folder_next_childs(&e.childs)
 			}
@@ -125,16 +127,39 @@ main :: proc() {
 
 		ui.BeginUIScope()
 
-		@(static) opts := mu.Options{.NO_CLOSE, .NO_RESIZE, .NO_INTERACT}
+		@(static) opts := mu.Options{}
 
 		// Left Panel
 		mu.set_next_item_size(mu_ctx, {200, auto_cast WINDOW_HEIGHT})
 		mu.window(mu_ctx, "Vault", {0, 0, 200, auto_cast WINDOW_HEIGHT}, opts)
 
-		if (mu.begin_popup(mu_ctx, "[popup:item:context]")) {
-			mu.button(mu_ctx, "File")
-			mu.button(mu_ctx, "Folder")
-			mu.end_popup(mu_ctx)
+		// fmt.println("focus_id:, ", mu_ctx.focus_id)
+		// fmt.println("updated_focus: ", mu_ctx.updated_focus)
+		// fmt.println("hover_id: ", mu_ctx.hover_id)
+
+		if mu_ctx.hover_root != nil {
+			fmt.println("hover_root: ", mu_ctx.hover_root.rect)
+		}
+
+		if (mu.popup(mu_ctx, "[popup:item:context]")) {
+			if .SUBMIT in mu.button(mu_ctx, "File") {
+				if ctx.target_item != nil {
+					file := new_entity(File)
+					file.name = "test.txt"
+					queue.push_back(&ctx.target_item.variant.(^Folder).childs, file)
+					ctx.target_item = nil
+					mu.close_popup(mu_ctx, "[popup:item:context]")
+				}
+			}
+			if .SUBMIT in mu.button(mu_ctx, "Folder") {
+				if ctx.target_item != nil {
+					folder := new_entity(Folder)
+					folder.name = "test"
+					queue.push_back(&ctx.target_item.variant.(^Folder).childs, folder)
+					ctx.target_item = nil
+					mu.close_popup(mu_ctx, "[popup:item:context]")
+				}
+			}
 		}
 
 		if ctx.is_popup_item_context {
@@ -145,14 +170,16 @@ main :: proc() {
 		mu.layout_row(mu_ctx, {-1, -1})
 		mu.layout_begin_column(mu_ctx)
 
-		for entity in ctx.entities.data {
-			if mu_ctx.hover_id == mu.get_id(mu_ctx, entity.name) {
-				if rl.IsMouseButtonReleased(.RIGHT) {
-					ctx.is_popup_item_context = true
-				}
-			}
+		for &entity in ctx.entities.data {
 			switch e in entity.variant {
 			case ^Folder:
+				if mu_ctx.hover_id == mu.get_id(mu_ctx, entity.name) {
+					if rl.IsMouseButtonReleased(.RIGHT) {
+						ctx.target_item = &entity
+						ctx.is_popup_item_context = true
+					}
+				}
+
 				if .ACTIVE in mu.treenode(mu_ctx, e.name) {
 					folder_next_childs(&e.childs)
 				}
